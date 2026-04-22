@@ -1,15 +1,14 @@
 const express = require('express');
 const router = express.Router();
-// 🔴 IMPORTAMOS LA NUEVA FUNCIÓN deleteUser
-const { registerUser, loginUser, deleteUser } = require('../controllers/authController');
+const { registerUser, loginUser, deleteUser, saveFinancialData, getFinancialData } = require('../controllers/authController');
 
-// Ruta para registro: /api/auth/register
+// Rutas Básicas
 router.post('/register', registerUser);
-
-// Ruta para login: /api/auth/login
-router.post('/login', loginUser); 
-
-// 🔴 RUTA PARA ELIMINAR CUENTA: /api/auth/delete
+router.post('/login', loginUser);
 router.delete('/delete', deleteUser);
+
+// ☁️ Rutas de Sincronización con TiDB
+router.post('/save-data', saveFinancialData);
+router.get('/get-data/:email', getFinancialData);
 
 module.exports = router;
