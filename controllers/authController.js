@@ -69,11 +69,12 @@ const deleteUser = async (req, res) => {
 };
 
 // ==========================================
-// ☁️ 4. GUARDAR DATOS EN LA NUBE (NUEVO)
+// ☁️ 4. GUARDAR DATOS EN LA NUBE
 // ==========================================
 const saveFinancialData = async (req, res) => {
     const { email, financialData } = req.body;
     try {
+        // Guardamos el objeto convirtiéndolo a string por seguridad
         await db.query(
             'UPDATE usuarios SET datos_financieros = ?, isConfigured = TRUE WHERE correo_electronico = ?',
             [JSON.stringify(financialData), email]
@@ -86,7 +87,7 @@ const saveFinancialData = async (req, res) => {
 };
 
 // ==========================================
-// ☁️ 5. OBTENER DATOS DE LA NUBE (NUEVO)
+// ☁️ 5. OBTENER DATOS DE LA NUBE (ARREGLADO 🛠️)
 // ==========================================
 const getFinancialData = async (req, res) => {
     const { email } = req.params;
@@ -97,9 +98,25 @@ const getFinancialData = async (req, res) => {
         );
         
         if (users.length > 0) {
+            const row = users[0];
+            let finalData;
+
+            // 🚨 EL FIX MAESTRO ESTÁ AQUÍ 🚨
+            // Revisamos si lo que viene de la BD es texto o ya es un objeto
+            if (typeof row.datos_financieros === 'string') {
+                try {
+                    finalData = JSON.parse(row.datos_financieros);
+                } catch (e) {
+                    finalData = {}; // Fallback si el JSON está mal
+                }
+            } else {
+                // Si TiDB ya lo entrega como objeto, lo usamos directo
+                finalData = row.datos_financieros || {};
+            }
+
             res.status(200).json({
-                financialData: JSON.parse(users[0].datos_financieros || "{}"),
-                isConfigured: users[0].isConfigured === 1 || users[0].isConfigured === true
+                financialData: finalData,
+                isConfigured: row.isConfigured === 1 || row.isConfigured === true
             });
         } else {
             res.status(404).json({ message: "Usuario no encontrado" });
