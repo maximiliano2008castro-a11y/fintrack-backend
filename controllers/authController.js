@@ -1,4 +1,4 @@
-const db = require('../config/db'); // Asegúrate de que esta ruta a tu archivo de conexión a la BD sea correcta
+const db = require('../config/db'); // Ruta a tu archivo de conexión
 const bcrypt = require('bcrypt');
 
 // ==========================================
@@ -7,7 +7,6 @@ const bcrypt = require('bcrypt');
 const registerUser = async (req, res) => {
     const { email, password } = req.body;
     
-    // Validamos que lleguen los datos
     if (!email || !password) {
         return res.status(400).json({ message: "Correo y contraseña son obligatorios" });
     }
@@ -17,32 +16,23 @@ const registerUser = async (req, res) => {
         connection = await db.getConnection();
         await connection.beginTransaction();
         
-        // Encriptamos la contraseña por seguridad
         const hashedPassword = await bcrypt.hash(password, 10);
         
-        // Insertamos en MySQL con los nombres EXACTOS de tus columnas.
-        // ID se genera solo (AUTO_INCREMENT).
-        // Nombre le ponemos uno por defecto para que MySQL no lo rechace si es NOT NULL.
         const [result] = await connection.query(
             'INSERT INTO usuarios (nombre, correo_electronico, hash_contrasena, pin_seguridad) VALUES (?, ?, ?, ?)',
             ['Usuario Nuevo', email, hashedPassword, '']
         );
 
-        // Confirmamos la transacción
         await connection.commit();
-        
         res.status(201).json({ message: 'Usuario registrado con éxito en MySQL' });
         
     } catch (error) {
         if (connection) await connection.rollback();
-        
         console.error("❌ ERROR EXACTO EN MYSQL:", error.message);
         
-        // Si el error es por correo duplicado (Código 1062 en MySQL)
         if (error.code === 'ER_DUP_ENTRY') {
             return res.status(409).json({ message: "Este correo ya está registrado." });
         }
-
         res.status(500).json({ message: "Error de servidor: " + error.message });
     } finally {
         if (connection) connection.release();
@@ -60,7 +50,6 @@ const loginUser = async (req, res) => {
     }
 
     try {
-        // Buscamos al usuario por su correo
         const [users] = await db.query('SELECT * FROM usuarios WHERE correo_electronico = ?', [email]);
         
         if (users.length === 0) {
@@ -68,15 +57,12 @@ const loginUser = async (req, res) => {
         }
 
         const user = users[0];
-
-        // Comparamos la contraseña encriptada
         const isMatch = await bcrypt.compare(password, user.hash_contrasena);
         
         if (!isMatch) {
             return res.status(401).json({ message: "Contraseña incorrecta." });
         }
 
-        // Si todo está bien, mandamos éxito
         res.status(200).json({ 
             message: "Login exitoso",
             user: {
@@ -93,9 +79,37 @@ const loginUser = async (req, res) => {
 };
 
 // ==========================================
-// 🔴 LA SOLUCIÓN A TU ERROR (EXPORTAR LAS FUNCIONES)
+// 🔴 3. NUEVA FUNCIÓN: ELIMINAR CUENTA (AUTODESTRUCCIÓN)
+// ==========================================
+const deleteUser = async (req, res) => {
+    const { email } = req.body;
+
+    if (!email) {
+        return res.status(400).json({ message: "Se requiere el correo para eliminar la cuenta." });
+    }
+
+    try {
+        // Ejecutamos el DELETE usando el nombre de tu columna correo_electronico
+        const [result] = await db.query('DELETE FROM usuarios WHERE correo_electronico = ?', [email]);
+        
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ message: "El usuario no se encontró en la nube." });
+        }
+
+        console.log(`🗑️ Cuenta de TiDB eliminada: ${email}`);
+        res.status(200).json({ message: "Cuenta eliminada correctamente de la base de datos." });
+
+    } catch (error) {
+        console.error("❌ ERROR AL ELIMINAR EN TIDB:", error.message);
+        res.status(500).json({ message: "Error interno al intentar borrar la cuenta del servidor." });
+    }
+};
+
+// ==========================================
+// EXPORTAR TODAS LAS FUNCIONES (INCLUYENDO ELIMINAR)
 // ==========================================
 module.exports = { 
     registerUser, 
-    loginUser 
+    loginUser,
+    deleteUser 
 };
