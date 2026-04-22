@@ -5,7 +5,7 @@ const authRoutes = require('./routes/authRoutes');
 
 const app = express();
 
-// --- MIDDLEWARES ---
+// --- MIDDLEWARES ---s
 app.use(cors()); // ✅ IMPORTANTE: Esto permite que React (puerto 3000) hable con Node (puerto 5000)
 app.use(express.json()); // Permite procesar datos en formato JSON
 
