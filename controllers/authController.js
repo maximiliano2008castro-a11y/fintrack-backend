@@ -1,11 +1,24 @@
-const db = require('../config/db'); 
+const db = require('../config/db');
 const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
+
+// Falla de inmediato si falta el secreto, en vez de firmar tokens inseguros.
+if (!process.env.JWT_SECRET) {
+    throw new Error('Falta la variable JWT_SECRET. Agregala al .env y a Render antes de arrancar.');
+}
+
+const generarToken = (user) =>
+    jwt.sign(
+        { id: user.id, email: user.correo_electronico },
+        process.env.JWT_SECRET,
+        { expiresIn: '30d' }
+    );
 
 // ==========================================
 // 1. REGISTRAR USUARIO
 // ==========================================
 const registerUser = async (req, res) => {
-    const { email, password } = req.body;
+    const { email, password, nombre } = req.body;
     if (!email || !password) return res.status(400).json({ message: "Correo y contraseña son obligatorios" });
 
     let connection;
@@ -14,13 +27,19 @@ const registerUser = async (req, res) => {
         await connection.beginTransaction();
         const hashedPassword = await bcrypt.hash(password, 10);
         
-        await connection.query(
+        const [resultado] = await connection.query(
             'INSERT INTO usuarios (nombre, correo_electronico, hash_contrasena, pin_seguridad) VALUES (?, ?, ?, ?)',
-            ['Usuario Nuevo', email, hashedPassword, '']
+            [nombre && nombre.trim() ? nombre.trim() : 'Usuario Nuevo', email, hashedPassword, '']
         );
 
         await connection.commit();
-        res.status(201).json({ message: 'Usuario registrado con éxito' });
+
+        const nuevoUsuario = { id: resultado.insertId, correo_electronico: email };
+        res.status(201).json({
+            message: 'Usuario registrado con éxito',
+            token: generarToken(nuevoUsuario),
+            user: { id: resultado.insertId, nombre: nombre || 'Usuario Nuevo', email }
+        });
     } catch (error) {
         if (connection) await connection.rollback();
         if (error.code === 'ER_DUP_ENTRY') return res.status(409).json({ message: "Este correo ya está registrado." });
@@ -46,7 +65,11 @@ const loginUser = async (req, res) => {
         
         if (!isMatch) return res.status(401).json({ message: "Contraseña incorrecta." });
 
-        res.status(200).json({ message: "Login exitoso", user: { id: user.id, nombre: user.nombre, email: user.correo_electronico } });
+        res.status(200).json({
+            message: "Login exitoso",
+            token: generarToken(user),
+            user: { id: user.id, nombre: user.nombre, email: user.correo_electronico }
+        });
     } catch (error) {
         res.status(500).json({ message: "Error al intentar iniciar sesión." });
     }
@@ -56,8 +79,8 @@ const loginUser = async (req, res) => {
 // 3. ELIMINAR CUENTA
 // ==========================================
 const deleteUser = async (req, res) => {
-    const { email } = req.body;
-    if (!email) return res.status(400).json({ message: "Se requiere el correo." });
+    // Solo puedes borrar TU propia cuenta: el correo sale del token.
+    const email = req.usuario.email;
 
     try {
         const [result] = await db.query('DELETE FROM usuarios WHERE correo_electronico = ?', [email]);
@@ -72,7 +95,10 @@ const deleteUser = async (req, res) => {
 // ☁️ 4. GUARDAR DATOS EN LA NUBE
 // ==========================================
 const saveFinancialData = async (req, res) => {
-    const { email, financialData } = req.body;
+    // El correo sale del token, NUNCA del cuerpo de la peticion.
+    // Si se tomara del body, cualquiera podria sobrescribir los datos de otro usuario.
+    const email = req.usuario.email;
+    const { financialData } = req.body;
     try {
         // Guardamos el objeto convirtiéndolo a string por seguridad
         await db.query(
@@ -90,7 +116,9 @@ const saveFinancialData = async (req, res) => {
 // ☁️ 5. OBTENER DATOS DE LA NUBE (ARREGLADO 🛠️)
 // ==========================================
 const getFinancialData = async (req, res) => {
-    const { email } = req.params;
+    // Igual que al guardar: el correo viene del token, no de la URL.
+    // Antes cualquiera podia leer los datos de otro poniendo su correo en la ruta.
+    const email = req.usuario.email;
     try {
         const [users] = await db.query(
             'SELECT datos_financieros, isConfigured FROM usuarios WHERE correo_electronico = ?',
