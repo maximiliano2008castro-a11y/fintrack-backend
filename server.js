@@ -25,9 +25,18 @@ app.use(express.json()); // Permite procesar datos en formato JSON
 // --- RUTAS ---
 app.use('/api/auth', authRoutes);
 
-// --- PUERTO ---
-const PORT = process.env.PORT || 5000;
+// Ruta de salud, util para saber si el servidor esta vivo sin tocar la base de datos.
+app.get('/api/health', (req, res) => res.json({ ok: true, hora: new Date().toISOString() }));
 
-app.listen(PORT, () => {
-    console.log(`🚀 Servidor de FINTRACK YOUTH corriendo en el puerto ${PORT}`);
-});
+// --- ARRANQUE ---
+// En Render (y en local) este archivo se ejecuta directo y hay que escuchar un puerto.
+// En Vercel NO: ahi la app se importa desde api/index.js y la plataforma la invoca sola.
+// Por eso solo llamamos a listen() cuando el archivo se corre como programa principal.
+if (require.main === module) {
+    const PORT = process.env.PORT || 5000;
+    app.listen(PORT, () => {
+        console.log(`🚀 Servidor de FINTRACK corriendo en el puerto ${PORT}`);
+    });
+}
+
+module.exports = app;
