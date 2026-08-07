@@ -92,6 +92,55 @@ const deleteUser = async (req, res) => {
 };
 
 // ==========================================
+// 3.5 CAMBIAR CONTRASEÑA
+// ==========================================
+// Mismas reglas que pide el formulario, pero verificadas tambien aqui:
+// el navegador se puede saltar, el servidor no.
+const validarPasswordSegura = (pass) => {
+    if (!pass || pass.length < 8) return "Debe tener al menos 8 caracteres.";
+    if (!/[A-Z]/.test(pass)) return "Debe incluir al menos una letra MAYÚSCULA.";
+    if (!/[a-z]/.test(pass)) return "Debe incluir al menos una letra minúscula.";
+    if (!/[0-9]/.test(pass)) return "Debe incluir al menos un número.";
+    if (!/[@$!%*?&.,\-_]/.test(pass)) return "Debe incluir al menos un carácter especial.";
+    return "OK";
+};
+
+const changePassword = async (req, res) => {
+    // El correo sale del token: solo puedes cambiar TU contraseña.
+    const email = req.usuario.email;
+    const { passwordActual, passwordNueva } = req.body;
+
+    if (!passwordActual || !passwordNueva) {
+        return res.status(400).json({ message: "Se requiere la contraseña actual y la nueva." });
+    }
+
+    const estado = validarPasswordSegura(passwordNueva);
+    if (estado !== "OK") return res.status(400).json({ message: estado });
+
+    if (passwordActual === passwordNueva) {
+        return res.status(400).json({ message: "La contraseña nueva debe ser distinta de la actual." });
+    }
+
+    try {
+        const [users] = await db.query('SELECT id, hash_contrasena FROM usuarios WHERE correo_electronico = ?', [email]);
+        if (users.length === 0) return res.status(404).json({ message: "El usuario no existe." });
+
+        // Se exige la contraseña actual para que un token robado no baste
+        // para quedarse con la cuenta.
+        const isMatch = await bcrypt.compare(passwordActual, users[0].hash_contrasena);
+        if (!isMatch) return res.status(401).json({ message: "La contraseña actual no es correcta." });
+
+        const nuevoHash = await bcrypt.hash(passwordNueva, 10);
+        await db.query('UPDATE usuarios SET hash_contrasena = ? WHERE correo_electronico = ?', [nuevoHash, email]);
+
+        res.status(200).json({ message: "Contraseña actualizada correctamente." });
+    } catch (error) {
+        console.error("Error al cambiar contraseña:", error);
+        res.status(500).json({ message: "No se pudo cambiar la contraseña." });
+    }
+};
+
+// ==========================================
 // ☁️ 4. GUARDAR DATOS EN LA NUBE
 // ==========================================
 const saveFinancialData = async (req, res) => {
@@ -155,4 +204,4 @@ const getFinancialData = async (req, res) => {
     }
 };
 
-module.exports = { registerUser, loginUser, deleteUser, saveFinancialData, getFinancialData };
+module.exports = { registerUser, loginUser, deleteUser, changePassword, saveFinancialData, getFinancialData };
